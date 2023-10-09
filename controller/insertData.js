@@ -61,10 +61,6 @@ const insertAuction = asyncHandler(async (req, res) => {
         const categoryId = await ProductCategory.findOne({
             title: product.category[1],
         }).select("_id");
-        const variants = {};
-        product.variants.forEach((variant) => {
-            variants[variant.label] = variant.variants;
-        });
         const insertData = {
             title: product.name,
             slug: slugify(product.name, {
@@ -87,7 +83,6 @@ const insertAuction = asyncHandler(async (req, res) => {
             description: product?.description,
             expire: new Date(Date.now() + (Math.floor(Math.random() * 10) + 1) * 24 * 60 * 60 * 1000),
             image: product.images,
-            variants: variants,
         };
         await AuctionProduct.create(insertData);
     });

@@ -29,11 +29,7 @@ const createAuctionProduct = asyncHandler(async (req, res) => {
             locale: "vi",
             trim: true,
         });
-    Object.keys(req.body).forEach(key => {
-        if (key.startsWith("variants"))
-            if (typeof req.body[key] === "string")
-                req.body[key] = [req.body[key]];
-    })
+
     let expire;
     if (req.body.expire) {
         expire = parseInt(req.body.expire) * 1000;
@@ -98,45 +94,6 @@ const getAllAuctionProduct = asyncHandler(async (req, res) => {
         (matched) => `$${matched}`
     );
     queryStr = JSON.parse(queryStr);
-
-    const variantQuery = {};
-    for (const key in queries) {
-        if (key.startsWith("variants.")) {
-            const variantKey = key.split(".")[1];
-            if (!variantQuery[variantKey]) {
-                variantQuery[variantKey] = [];
-            }
-            variantQuery[variantKey].push(queries[key]);
-            delete queryStr[key];
-        }
-    }
-    if (Object.keys(variantQuery).length > 0) {
-        //format thanh object có value la mang 1 chieu
-        Object.keys(variantQuery).forEach((key) => {
-            if (Array.isArray(variantQuery[key])) {
-                variantQuery[key] = variantQuery[key].flat();
-            }
-        });
-
-        //query product phai chua tat ca cac key
-        const requireVariant = Object.keys(variantQuery).map((key) => ({
-            [`variants.${capitalizeFirstLetter(key)}`]: { $exists: true },
-        }));
-        queryStr["$and"] = requireVariant;
-
-        //format in hoa cac value
-        const newVariantQuery = {};
-        Object.keys(variantQuery).forEach((key) => {
-            newVariantQuery[key] = variantQuery[key].map((value) =>
-                value.toUpperCase()
-            );
-        });
-        queryStr["$or"] = Object.keys(newVariantQuery).map((key) => ({
-            [`variants.${capitalizeFirstLetter(key)}`]: {
-                $in: newVariantQuery[key],
-            },
-        }));
-    }
     // if (queries?.title)
     //     queryStr.title = { $regex: queries.title, $options: "i" };
     if (req.query.title)

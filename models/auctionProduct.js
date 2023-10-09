@@ -69,7 +69,6 @@ var auctionProductSchema = new mongoose.Schema(
             type: Array,
             default: extraInfo,
         },
-        variants: Object,
     },
     { timestamps: true }
 );
