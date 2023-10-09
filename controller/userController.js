@@ -45,6 +45,8 @@ const { email, name, mobile } = require("../ultis/joi")
 //         message: "Please check your email to get OTP",
 //     });
 // });
+const productPopulate = ["title", "price", "thumbnail", "category"];
+const auctionProductPopulate = ["title", "thumbnail", "brand", "maxPrice", "reservePrice", "expire", "highestBidder"]
 const createAccount = asyncHandler(async (req, res) => {
     const { email, password, firstname, lastname } = req.body;
     if (!email || !password || !firstname || !lastname)
@@ -102,6 +104,7 @@ const register = asyncHandler(async (req, res) => {
 
 const confirmRegistration = asyncHandler(async (req, res) => {
     const { email, code, password, firstname, lastname, mobile } = req.body;
+
     const otpRecord = await OTP.findOne({ email });
     if (!otpRecord) throw new Error("OTP not found !");
     if (otpRecord.expiresAt < new Date()) {
@@ -135,7 +138,6 @@ const login = asyncHandler(async (req, res) => {
     if (!user) throw new Error("User not found !");
     else if (user && bcrypt.compareSync(password, user.password)) {
         const { password, role, refreshToken, ...userData } = user.toObject();
-
         const newRefreshToken = generateRefreshToken(user._id);
         const token = generateAccessToken(user._id, role);
 
@@ -160,11 +162,11 @@ const login = asyncHandler(async (req, res) => {
 
 const getCurrentUser = asyncHandler(async (req, res) => {
     const { _id } = req.user;
-    const productFields = ["title", "price", "thumbnail", "category"];
-
     const user = await User.findById(_id)
         .select("-refreshToken -password ")
-        .populate("cart.product", productFields);
+        .populate("cart.product", productPopulate)
+        .populate("auction.product", auctionProductPopulate)
+    await user.populate("auction.product.highestBidder", "firstname lastname _id")
     return res.status(200).json({
         success: user ? true : false,
         response: user ? user : "User not found",
@@ -311,7 +313,6 @@ const deleteUser = asyncHandler(async (req, res) => {
 });
 
 const updateUser = asyncHandler(async (req, res) => {
-    const productFields = ["title", "price", "thumbnail", "category"];
     const { _id } = req.user;
     if (req?.file)
         req.body.avatar = { filename: req?.file?.filename, path: req?.file?.path };
@@ -323,11 +324,12 @@ const updateUser = asyncHandler(async (req, res) => {
     const { password, role, ...userData } = req.body;
     if (!_id || Object.keys(userData).length === 0)
         throw new Error("Missing Input");
-
     const response =
         await User.findByIdAndUpdate(_id, userData, { new: true })
             .select("-refreshToken -password ")
-            .populate("cart.product", productFields);
+            .populate("cart.product", productPopulate)
+            .populate("auction.product", auctionProductPopulate);
+    await response.populate("auction.product.highestBidder", "firstname lastname _id")
     return res.status(200).json({
         success: response ? true : false,
         updateUser: response,
@@ -408,7 +410,6 @@ const addtoCart = asyncHandler(async (req, res) => {
         );
     }
     let response;
-    const productFields = ["title", "price", "thumbnail", "category"];
     if (alreadyProduct) {
         cart.forEach((item) => {
             if (item.product.toString() === pid && check(item.variants)) {
@@ -424,8 +425,9 @@ const addtoCart = asyncHandler(async (req, res) => {
             },
             { new: true }
         )
-            .populate("cart.product", productFields)
-            .select("-refreshToken -password -role");
+            .populate("cart.product", productPopulate)
+            .populate("auction.product", auctionProductPopulate)
+            .select("-refreshToken -password ");
     } else {
         response = await User.findByIdAndUpdate(
             _id,
@@ -440,21 +442,26 @@ const addtoCart = asyncHandler(async (req, res) => {
             },
             { new: true }
         )
-            .populate("cart.product", productFields)
-            .select("-refreshToken -password -role");
+            .populate("cart.product", productPopulate)
+            .populate("auction.product", auctionProductPopulate)
+            .select("-refreshToken -password ");
     }
+    await response.populate("auction.product.highestBidder", "firstname lastname _id")
     res.status(200).json({
         success: response ? true : false,
         updateCart: response,
     });
 });
+
 const updateCart = asyncHandler(async (req, res) => {
     const { _id } = req.user;
     const { cart } = req.body;
-    const productFields = ["title", "price", "thumbnail"];
     const response = await User.findByIdAndUpdate(_id, { cart }, { new: true })
-        .populate("cart.product", productFields)
-        .select("-refreshToken -password -role");
+        .populate("cart.product", productPopulate)
+        .populate("auction.product", auctionProductPopulate)
+        .select("-refreshToken -password ");
+    await response.populate("auction.product.highestBidder", "firstname lastname _id")
+
     res.status(200).json({
         success: response ? true : false,
         updateCart: response,

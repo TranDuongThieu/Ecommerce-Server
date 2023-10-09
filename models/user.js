@@ -40,15 +40,33 @@ var userSchema = new mongoose.Schema(
                 variants: Object,
             },
         ],
-        address: String,
+
+        address: {
+            type: String,
+            default: ''
+        },
         avatar: {
             type: Object,
+            default: {
+                path: 'https://res.cloudinary.com/dh6bfx865/image/upload/v1696660940/cuahangdientu/default_avatar_xciu3w.png',
+                filename: 'cuahangdientu/default_avatar_xciu3w'
+            }
         },
         wislist: [
             {
                 type: mongoose.Types.ObjectId,
                 ref: "Product",
             },
+        ],
+        auction: [
+            {
+                product: {
+                    type: mongoose.Types.ObjectId,
+                    ref: "AuctionProduct",
+                },
+                price: Number,
+                bidedAt: Date,
+            }
         ],
         isBlocked: {
             type: Boolean,
@@ -69,6 +87,12 @@ var userSchema = new mongoose.Schema(
         registerToken: {
             type: String,
         },
+        orders: [
+            {
+                type: mongoose.Types.ObjectId,
+                ref: "Order"
+            }
+        ]
     },
     {
         timestamps: true,

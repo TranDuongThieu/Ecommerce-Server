@@ -1,10 +1,13 @@
-const Product = require("../models/product");
+const AuctionProduct = require("../models/auctionProduct");
+const User = require("../models/user");
 const asyncHandler = require("express-async-handler");
 const slugify = require("slugify");
 const productCategory = require("../models/productCategory");
 const cloudinary = require("cloudinary");
-
-const createProduct = asyncHandler(async (req, res) => {
+const sendMail = require("../ultis/sendmail");
+const productPopulate = ["title", "price", "thumbnail", "category"];
+const auctionProductPopulate = ["title", "thumbnail", "brand", "maxPrice", "reservePrice", "expire", "highestBidder"]
+const createAuctionProduct = asyncHandler(async (req, res) => {
     const image = req.files?.image?.map(item => ({ filename: item.filename, path: item.path }));
     const thumb = { filename: req?.files.thumb[0]?.filename, path: req?.files.thumb[0]?.path };
     if (thumb)
@@ -31,18 +34,49 @@ const createProduct = asyncHandler(async (req, res) => {
             if (typeof req.body[key] === "string")
                 req.body[key] = [req.body[key]];
     })
-    const product = await Product.create(req.body);
+    let expire;
+    if (req.body.expire) {
+        expire = parseInt(req.body.expire) * 1000;
+        // Convert the 'time' from seconds to milliseconds and add it to the current date
+        const timeInSeconds = parseInt(req.body.expire);
+        const expirationTimeInMilliseconds = Date.now() + (timeInSeconds * 1000);
+
+        // Create a new Date object with the calculated expiration time
+        req.body.expire = new Date(expirationTimeInMilliseconds);
+    }
+
+    const product = await AuctionProduct.create(req.body);
+    if (product) {
+        setTimeout(async () => { // Use async function for user retrieval
+            const finalProduct = await AuctionProduct.findById(product._id.toString());
+            if (finalProduct.auctionHistory.length > 0) {
+                const userId = finalProduct.auctionHistory[0].bidedBy.toString();
+                const user = await User.findById(userId); // Use await to retrieve user
+                if (user) {
+                    const html = `Dear ${user.firstname} ${user.lastname}, you won the auction for ${finalProduct.title}. Please contact us for more information.`;
+                    const email = user.email;
+                    const data = {
+                        email,
+                        html,
+                        subject: "You won the auction",
+                    };
+                    sendMail(data);
+                } else {
+                    console.error("User not found"); // Handle the case when the user is not found
+                }
+            }
+        }, expire)
+    }
     res.status(200).json({
         success: product ? true : false,
         product,
     });
 });
 
-const getProduct = asyncHandler(async (req, res) => {
+const getAuctionProduct = asyncHandler(async (req, res) => {
     const { pid } = req.params;
-    const product = await Product.findById(pid)
-        .populate("category")
-        .populate("rating.postedBy", "firstname lastname avatar");
+    const product = await AuctionProduct.findById(pid)
+        .populate("category").populate("auctionHistory.bidedBy", "firstname lastname avatar _id")
     return res.status(200).json({
         success: product ? true : false,
         product: product ? product : "Not Found",
@@ -50,7 +84,7 @@ const getProduct = asyncHandler(async (req, res) => {
 });
 
 //filtering, paging,
-const getAllProduct = asyncHandler(async (req, res) => {
+const getAllAuctionProduct = asyncHandler(async (req, res) => {
     function capitalizeFirstLetter(string) {
         return string.charAt(0).toUpperCase() + string.slice(1);
     }
@@ -59,7 +93,6 @@ const getAllProduct = asyncHandler(async (req, res) => {
     excludeFields.forEach((el) => delete queries[el]);
 
     let queryStr = JSON.stringify(queries);
-    
     queryStr = queryStr.replace(
         /\b(gt|gte|lt|lte|in)\b/g,
         (matched) => `$${matched}`
@@ -90,7 +123,7 @@ const getAllProduct = asyncHandler(async (req, res) => {
             [`variants.${capitalizeFirstLetter(key)}`]: { $exists: true },
         }));
         queryStr["$and"] = requireVariant;
-        
+
         //format in hoa cac value
         const newVariantQuery = {};
         Object.keys(variantQuery).forEach((key) => {
@@ -113,18 +146,18 @@ const getAllProduct = asyncHandler(async (req, res) => {
             { brand: { $regex: req.query.title, $options: "i" } },
         ];
 
-    let query = Product.find(queryStr).populate("category", "title brand");
+    let query = AuctionProduct.find(queryStr).populate("category", "title brand");
     //sort. truyen vao string "abc,avs"
     if (req.query.sort) {
         const sortBy = req.query.sort.split(",").join(" ");
         query = query.sort(sortBy);
-    } else query = query.sort("-createdAt");
+    } else query = query.sort("-expire -createdAt");
     //get fields
     if (req.query.fields) {
         const fields = req.query.fields.split(",").join(" ");
         query = query.select(fields);
     } else query = query.select("-__v");
-    const total = await Product.countDocuments(query);
+    const total = await AuctionProduct.countDocuments(query);
     //paging
     const page = +req.query.page || 1;
     const limit = +req.query.limit || process.env.PRODUCT_LIMIT;
@@ -140,9 +173,9 @@ const getAllProduct = asyncHandler(async (req, res) => {
     });
 });
 
-const deleteProduct = asyncHandler(async (req, res) => {
+const deleteAuctionProduct = asyncHandler(async (req, res) => {
     const { pid } = req.params;
-    const response = await Product.findByIdAndDelete(pid);
+    const response = await AuctionProduct.findByIdAndDelete(pid);
     if (response.thumbnail.filename)
         await cloudinary.v2.uploader.destroy(response.thumbnail.filename);
     response.image.forEach(async (item) => {
@@ -155,11 +188,13 @@ const deleteProduct = asyncHandler(async (req, res) => {
     });
 });
 
-const updateProduct = asyncHandler(async (req, res) => {
+const updateAuctionProduct = asyncHandler(async (req, res) => {
     const { pid } = req.params;
-
     let image
     let thumb
+    if (req.body.auctionHistory) delete req.body.auctionHistory;
+    if (req.body.image) delete req.body.image;
+    if (req.body.thumbnail) delete req.body.thumbnail;
     if (Object.keys(req.files).length > 0) {
         if (req?.files?.thumb && req.files?.thumb[0])
             thumb = { filename: req?.files?.thumb[0]?.filename, path: req?.files?.thumb[0]?.path };
@@ -169,7 +204,6 @@ const updateProduct = asyncHandler(async (req, res) => {
     if (thumb)
         req.body.thumbnail = thumb;
     delete req.body.thumb;
-
     if (image)
         req.body.image = image
     const categoryId = await productCategory.findOne({
@@ -187,12 +221,8 @@ const updateProduct = asyncHandler(async (req, res) => {
             locale: "vi",
             trim: true,
         });
-    Object.keys(req.body).forEach(key => {
-        if (key.startsWith("variants"))
-            if (typeof req.body[key] === "string")
-                req.body[key] = [req.body[key]];
-    })
-    const product = await Product.findById(pid);
+
+    const product = await AuctionProduct.findById(pid);
     if (product.thumbnail.filename && req.body.thumbnail)
         await cloudinary.v2.uploader.destroy(product.thumbnail.filename);
     if (req?.files?.image?.length > 0)
@@ -201,76 +231,91 @@ const updateProduct = asyncHandler(async (req, res) => {
                 await cloudinary.v2.uploader.destroy(item.filename)
         })
     else delete req.body.image
-    const response = await Product.findByIdAndUpdate(pid, req.body);
+    if (req.body.expire) {
+        expire = parseInt(req.body.expire) * 1000;
+        // Convert the 'time' from seconds to milliseconds and add it to the current date
+        const timeInSeconds = parseInt(req.body.expire);
+        const expirationTimeInMilliseconds = Date.now() + (timeInSeconds * 1000);
+
+        // Create a new Date object with the calculated expiration time
+        req.body.expire = new Date(expirationTimeInMilliseconds);
+    }
+    const response = await AuctionProduct.findByIdAndUpdate(pid, req.body);
     res.status(200).json({
         success: response ? true : false,
         message: response ? "Update successfully" : "Not Found"
     })
-}); 
+});
 
-const ratingProduct = asyncHandler(async (req, res) => {
+
+const bidProduct = asyncHandler(async (req, res) => {
     const { _id } = req.user;
-    const { star, pid, comment } = req.body;
-    if (!star || !pid) throw new Error("Missing Input");
+    const { price, pid } = req.body;
+    if (!price || !pid) throw new Error("Missing Input");
+    const productFields = ["title", "price", "thumbnail", "category"];
 
-    const product = await Product.findById(pid);
-    const postedAt = new Date();
-    const { alreadyRating, indexRating } = product.rating.reduce(
-        (result, rating, index) => {
-            if (!result.alreadyRating && rating.postedBy.toString() === _id) {
-                result.alreadyRating = true;
-                result.indexRating = index;
+    const product = await AuctionProduct.findById(pid)
+        .populate("category")
+    const user = await User.findById(_id).populate("cart.product", productFields)
+    const alreadyBid = user.auction.find(item => item.product._id.toString() === pid);
+    const bidedAt = new Date();
+    if (product.expire < bidedAt) return res.status(400).json({
+        success: false,
+        message: "This product has been unavailable !"
+    });
+
+    if (price - product.maxPrice >= product.stepPrice) {
+        product.auctionHistory.unshift({
+            price,
+            bidedBy: _id,
+            bideddAt: bidedAt
+        })
+        product.maxPrice = price;
+        product.highestBidder = _id;
+    }
+    else return res.status(400).json({
+        success: false,
+        message: "Invalid Price"
+    })
+    if (alreadyBid) {
+        user.auction.forEach((item) => {
+            if (item.product._id.toString() === pid) {
+                item.price = price
+                item.bidedAt = bidedAt;
             }
-            return result;
-        },
-        { alreadyRating: false, indexRating: -1 }
-    );
-    if (alreadyRating) {
-        product.rating[indexRating] = {
-            star,
-            postedBy: _id,
-            comment,
-            postedAt,
-        };
-    } else product.rating.push({ star, postedBy: _id, comment, postedAt });
+        })
+    }
+    else {
+        user.auction.unshift({
+            product: pid,
+            price: price,
+            bidedAt: bidedAt
+        })
+    }
+    await product.populate("auctionHistory.bidedBy", "firstname lastname avatar _id");
+    await user.populate("auction.product", auctionProductPopulate);
+    user.auction.forEach(item => {
+        if (item.product._id.toString() === pid) {
+            item.product.maxPrice = price;
+            item.product.highestBidder = _id;
+        }
+    })
 
-    let totalStar = product.rating.reduce(
-        (result, rating) => (result += rating.star),
-        0
-    );
-    totalStar = (totalStar / product.rating.length).toFixed(1);
-    product.totalRating = totalStar;
-    await product.populate("rating.postedBy", "firstname lastname avatar");
+    await user.populate("auction.product.highestBidder", "firstname lastname _id ");
+    await user.save();
     await product.save();
+
     return res.status(200).json({
         success: true,
         product,
+        user,
     });
 });
-const uploadImgProduct = asyncHandler(async (req, res) => {
-    const { pid } = req.params;
-    if (req.files.length === 0) throw new Error("Missing Input");
-    const response = await Product.findByIdAndUpdate(
-        pid,
-        {
-            $push: {
-                image: {
-                    $each: req.files.map((item) => item.path),
-                },
-            },
-        },
-        { new: true }
-    );
-
-    return res.status(200).json({ message: "ok", response });
-});
-
 module.exports = {
-    createProduct,
-    getProduct,
-    getAllProduct,
-    deleteProduct,
-    updateProduct,
-    ratingProduct,
-    uploadImgProduct,
+    createAuctionProduct,
+    getAuctionProduct,
+    getAllAuctionProduct,
+    deleteAuctionProduct,
+    updateAuctionProduct,
+    bidProduct,
 };

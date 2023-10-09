@@ -1,4 +1,5 @@
 const Product = require("../models/product");
+const AuctionProduct = require("../models/auctionProduct");
 const asyncHandler = require("express-async-handler");
 const slugify = require("slugify");
 const data = require("../data/ecommerce2.json");
@@ -54,4 +55,42 @@ const insertCategory = asyncHandler(async (req, res) => {
     res.status(200).json("OK");
 });
 
-module.exports = { insertData, insertCategory };
+
+const insertAuction = asyncHandler(async (req, res) => {
+    data.forEach(async (product) => {
+        const categoryId = await ProductCategory.findOne({
+            title: product.category[1],
+        }).select("_id");
+        const variants = {};
+        product.variants.forEach((variant) => {
+            variants[variant.label] = variant.variants;
+        });
+        const insertData = {
+            title: product.name,
+            slug: slugify(product.name, {
+                replacement: "-",
+                remove: undefined,
+                lower: false,
+                strict: false,
+                locale: "vi",
+                trim: true,
+            }),
+            thumbnail: product.thumb,
+            category: categoryId,
+            brand: product.brand,
+            reservePrice: product?.price
+                ? Math.round(
+                    Number(product?.price?.match(/\d/g).join("")) / 100
+                )
+                : 0,
+            stepPrice: 500,
+            description: product?.description,
+            expire: new Date(Date.now() + (Math.floor(Math.random() * 10) + 1) * 24 * 60 * 60 * 1000),
+            image: product.images,
+            variants: variants,
+        };
+        await AuctionProduct.create(insertData);
+    });
+    res.status(200).json("ok");
+});
+module.exports = { insertData, insertCategory, insertAuction };
