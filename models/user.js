@@ -48,8 +48,8 @@ var userSchema = new mongoose.Schema(
         avatar: {
             type: Object,
             default: {
-                path: 'https://res.cloudinary.com/dh6bfx865/image/upload/v1696660940/cuahangdientu/default_avatar_xciu3w.png',
-                filename: 'cuahangdientu/default_avatar_xciu3w'
+                path: 'https://res.cloudinary.com/dh6bfx865/image/upload/v1697984770/cuahangdientu/default_avatar.png',
+                filename: 'cuahangdientu/default_avatar'
             }
         },
         wislist: [

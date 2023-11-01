@@ -318,7 +318,7 @@ const updateUser = asyncHandler(async (req, res) => {
         req.body.avatar = { filename: req?.file?.filename, path: req?.file?.path };
     else delete req.body.avatar;
     const user = await User.findById(_id);
-    if (user?.avatar?.filename && req.body.avatar)
+    if (user?.avatar?.filename && req.body.avatar && user.avatar.filename !== "cuahangdientu/default_avatar")
         await cloudinary.v2.uploader.destroy(user.avatar.filename);
 
     const { password, role, ...userData } = req.body;
